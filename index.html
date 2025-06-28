@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Endless Runner Dodger Enhanced</title>
+  <title>Endless Runner Dodger Enhanced Phase 1</title>
   <style>
     body {
       margin: 0;
@@ -89,6 +89,7 @@
       <p>Dodge the red obstacles!</p>
       <p>Use Left/Right arrows or buttons below (mobile)</p>
       <p>Collect green ⚡ power-ups for speed boost</p>
+      <p>New power-ups: 🛡 Shield, 💣 Nuke, ⏳ Slow Time</p>
       <button id="startBtn">Start Game</button>
     </div>
 
@@ -113,6 +114,9 @@
   <audio id="moveSound" src="https://freesound.org/data/previews/146/146726_2437358-lq.mp3" preload="auto"></audio>
   <audio id="collisionSound" src="https://freesound.org/data/previews/174/174027_3247037-lq.mp3" preload="auto"></audio>
   <audio id="powerupSound" src="https://freesound.org/data/previews/146/146728_2437358-lq.mp3" preload="auto"></audio>
+  <audio id="shieldSound" src="https://freesound.org/data/previews/106/106767_512123-lq.mp3" preload="auto"></audio>
+  <audio id="nukeSound" src="https://freesound.org/data/previews/264/264222_512123-lq.mp3" preload="auto"></audio>
+  <audio id="slowSound" src="https://freesound.org/data/previews/240/240777_512123-lq.mp3" preload="auto"></audio>
 
   <script>
     // ==== Setup ====
@@ -136,6 +140,9 @@
     const moveSound = document.getElementById('moveSound');
     const collisionSound = document.getElementById('collisionSound');
     const powerupSound = document.getElementById('powerupSound');
+    const shieldSound = document.getElementById('shieldSound');
+    const nukeSound = document.getElementById('nukeSound');
+    const slowSound = document.getElementById('slowSound');
 
     // Game variables
     const player = {
@@ -148,6 +155,8 @@
       displayX: canvas.width / 2 - 15,
       speedBoostActive: false,
       speedBoostTimer: 0,
+      shieldActive: false,
+      shieldTimer: 0,
     };
 
     let obstacles = [];
@@ -192,6 +201,15 @@
     }
     function playPowerupSound() {
       if (soundOn) powerupSound.play();
+    }
+    function playShieldSound() {
+      if (soundOn) shieldSound.play();
+    }
+    function playNukeSound() {
+      if (soundOn) nukeSound.play();
+    }
+    function playSlowSound() {
+      if (soundOn) slowSound.play();
     }
 
     // ==== Input Handlers ====
@@ -249,55 +267,94 @@
 
     // ==== Game Functions ====
 
+    // Background theme colors by score ranges
+    function getBackgroundTheme(score) {
+      if(score < 500) return '#111'; // dark space
+      if(score < 1000) return '#001f3f'; // neon blue
+      return '#660000'; // glowing red
+    }
+
+    // Move player with boundary check
     function movePlayer() {
       player.x += player.dx;
       if (player.x < 0) player.x = 0;
       if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
 
-      // Smooth interpolation for display
       player.displayX += (player.x - player.displayX) * 0.2;
 
-      // Decrease speed boost timer
       if(player.speedBoostActive) {
-        player.speedBoostTimer -= 16; // approx frame time
+        player.speedBoostTimer -= 16;
         if(player.speedBoostTimer <= 0) {
           player.speedBoostActive = false;
           player.speed = 7;
         }
       }
+
+      if(player.shieldActive) {
+        player.shieldTimer -= 16;
+        if(player.shieldTimer <= 0) {
+          player.shieldActive = false;
+        }
+      }
     }
 
-    // Draw player with glow
+    // Draw player with glow and shield ring if active
     function drawPlayer() {
       ctx.fillStyle = player.speedBoostActive ? '#00ffff' : '#00ff00';
       ctx.shadowColor = player.speedBoostActive ? '#00ffff' : '#00ff00';
       ctx.shadowBlur = 15;
       ctx.fillRect(player.displayX, player.y, player.width, player.height);
       ctx.shadowBlur = 0;
+
+      // Draw shield ring if active
+      if(player.shieldActive) {
+        ctx.strokeStyle = '#00ffff';
+        ctx.lineWidth = 4;
+        ctx.shadowColor = '#00ffff';
+        ctx.shadowBlur = 20;
+        ctx.beginPath();
+        ctx.arc(player.displayX + player.width/2, player.y + player.height/2, player.width, 0, Math.PI*2);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
     }
 
-    // Spawn obstacles
+    // Spawn obstacles with optional movement
     function spawnObstacle() {
       const size = Math.random() * 20 + 20;
       const x = Math.random() * (canvas.width - size);
-      obstacles.push({ x, y: -size, width: size, height: size, opacity: 0, opacitySpeed: 0.05 });
+      // 50% chance to have moving obstacle
+      const moving = Math.random() < 0.5;
+      obstacles.push({ x, y: -size, width: size, height: size, opacity: 0, opacitySpeed: 0.05, moving, direction: 1, moveSpeed: 2 });
     }
 
-    // Spawn power-ups (speed boost)
+    // Spawn power-ups with types: speed, shield, nuke, slow
     function spawnPowerUp() {
       const size = 25;
       const x = Math.random() * (canvas.width - size);
-      powerUps.push({ x, y: -size, width: size, height: size, opacity: 0, opacitySpeed: 0.05 });
+      const types = ['speed', 'shield', 'nuke', 'slow'];
+      const type = types[Math.floor(Math.random() * types.length)];
+      powerUps.push({ x, y: -size, width: size, height: size, opacity: 0, opacitySpeed: 0.05, type });
     }
 
+    // Move obstacles, including side to side if moving
     function moveObstacles() {
       obstacles.forEach(obs => {
         obs.y += obstacleSpeed;
         if (obs.opacity < 1) obs.opacity += obs.opacitySpeed;
+
+        if(obs.moving) {
+          obs.x += obs.moveSpeed * obs.direction;
+          if(obs.x < 0 || obs.x + obs.width > canvas.width) {
+            obs.direction *= -1;
+            obs.x = Math.min(Math.max(obs.x, 0), canvas.width - obs.width);
+          }
+        }
       });
       obstacles = obstacles.filter(obs => obs.y < canvas.height + obs.height);
     }
 
+    // Move power-ups downward
     function movePowerUps() {
       powerUps.forEach(pu => {
         pu.y += obstacleSpeed * 0.8;
@@ -306,6 +363,7 @@
       powerUps = powerUps.filter(pu => pu.y < canvas.height + pu.height);
     }
 
+    // Draw obstacles (red pulsating squares)
     function drawObstacles() {
       obstacles.forEach(obs => {
         const pulse = 1 + 0.1 * Math.sin(Date.now() / 200);
@@ -318,182 +376,79 @@
       });
     }
 
+    // Draw power-ups with icons/colors by type
     function drawPowerUps() {
       powerUps.forEach(pu => {
         const pulse = 1 + 0.15 * Math.sin(Date.now() / 150);
         const size = pu.width * pulse;
         ctx.globalAlpha = pu.opacity;
-        ctx.fillStyle = '#0ff';
-        ctx.beginPath();
-        ctx.moveTo(pu.x + size/2, pu.y);
-        ctx.lineTo(pu.x + size*0.7, pu.y + size*0.7);
-        ctx.lineTo(pu.x, pu.y + size*0.25);
-        ctx.lineTo(pu.x + size, pu.y + size*0.25);
-        ctx.lineTo(pu.x + size*0.3, pu.y + size*0.7);
-        ctx.closePath();
-        ctx.fill();
+
+        if(pu.type === 'speed') {
+          ctx.fillStyle = '#0ff'; // cyan lightning bolt
+          ctx.beginPath();
+          ctx.moveTo(pu.x + size/2, pu.y);
+          ctx.lineTo(pu.x + size*0.7, pu.y + size*0.7);
+          ctx.lineTo(pu.x, pu.y + size*0.25);
+          ctx.lineTo(pu.x + size, pu.y + size*0.25);
+          ctx.lineTo(pu.x + size*0.3, pu.y + size*0.7);
+          ctx.closePath();
+          ctx.fill();
+        } else if(pu.type === 'shield') {
+          ctx.strokeStyle = '#00ffff';
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.arc(pu.x + pu.width/2, pu.y + pu.height/2, pu.width/2, 0, Math.PI*2);
+          ctx.stroke();
+        } else if(pu.type === 'nuke') {
+          ctx.fillStyle = '#ff0'; // yellow circle with X
+          ctx.beginPath();
+          ctx.arc(pu.x + pu.width/2, pu.y + pu.height/2, pu.width/2, 0, Math.PI*2);
+          ctx.fill();
+          ctx.strokeStyle = '#000';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(pu.x + pu.width*0.3, pu.y + pu.height*0.3);
+          ctx.lineTo(pu.x + pu.width*0.7, pu.y + pu.height*0.7);
+          ctx.moveTo(pu.x + pu.width*0.7, pu.y + pu.height*0.3);
+          ctx.lineTo(pu.x + pu.width*0.3, pu.y + pu.height*0.7);
+          ctx.stroke();
+        } else if(pu.type === 'slow') {
+          ctx.fillStyle = '#f0f'; // purple clock icon
+          ctx.beginPath();
+          ctx.arc(pu.x + pu.width/2, pu.y + pu.height/2, pu.width/2, 0, Math.PI*2);
+          ctx.fill();
+          ctx.strokeStyle = '#fff';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(pu.x + pu.width/2, pu.y + pu.height/3);
+          ctx.lineTo(pu.x + pu.width/2, pu.y + pu.height/2);
+          ctx.lineTo(pu.x + pu.width*0.65, pu.y + pu.height/2);
+          ctx.stroke();
+        }
+
         ctx.globalAlpha = 1;
       });
     }
 
+    // Collision detection helper
     function checkCollision(rect1, rect2) {
       return (
-        player.displayX < rect2.x + rect2.width &&
-        player.displayX + rect1.width > rect2.x &&
+        rect1.displayX < rect2.x + rect2.width &&
+        rect1.displayX + rect1.width > rect2.x &&
         rect1.y < rect2.y + rect2.height &&
         rect1.height + rect1.y > rect2.y
       );
     }
 
+    // Handle collisions with obstacles and power-ups
     function detectCollisions() {
-      for (let obs of obstacles) {
-        if (checkCollision(player, obs)) {
-          playCollisionSound();
-          endGame();
-          return;
-        }
-      }
-
-      // Check power-ups
-      for (let i = 0; i < powerUps.length; i++) {
-        if (checkCollision(player, powerUps[i])) {
-          playPowerupSound();
-          activateSpeedBoost();
-          powerUps.splice(i, 1);
-          break;
-        }
-      }
-    }
-
-    function activateSpeedBoost() {
-      player.speedBoostActive = true;
-      player.speed = 12;
-      player.speedBoostTimer = 3000; // 3 seconds
-    }
-
-    function updateScore() {
-      score++;
-      scoreDisplay.textContent = 'Score: ' + score;
-    }
-
-    function clear() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
-
-    // Animate stars in background
-    function drawStars() {
-      ctx.fillStyle = '#fff';
-      stars.forEach(s => {
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
-        ctx.fill();
-        s.y += s.speed;
-        if (s.y > canvas.height) s.y = 0;
-      });
-    }
-
-    // Increase difficulty over time
-    function increaseDifficulty() {
-      if(score % 200 === 0) {
-        obstacleSpeed += 0.3;
-        obstacleSpawnInterval = Math.max(500, obstacleSpawnInterval - 100);
-      }
-    }
-
-    // Main game loop
-    function gameLoop(timestamp) {
-      if (!lastObstacleSpawn) lastObstacleSpawn = timestamp;
-
-      clear();
-      drawStars();
-
-      movePlayer();
-      drawPlayer();
-
-      if (timestamp - lastObstacleSpawn > obstacleSpawnInterval) {
-        // 10% chance to spawn power-up instead of obstacle
-        if(Math.random() < 0.1) spawnPowerUp();
-        else spawnObstacle();
-        lastObstacleSpawn = timestamp;
-      }
-
-      moveObstacles();
-      drawObstacles();
-
-      movePowerUps();
-      drawPowerUps();
-
-      detectCollisions();
-
-      increaseDifficulty();
-
-      if (!gameOver) {
-        updateScore();
-        animationFrameId = requestAnimationFrame(gameLoop);
-      }
-    }
-
-    // Start the game
-    function startGame() {
-      obstacles = [];
-      powerUps = [];
-      score = 0;
-      gameOver = false;
-      obstacleSpeed = 3;
-      obstacleSpawnInterval = 1500;
-      player.speed = 7;
-      player.speedBoostActive = false;
-      player.speedBoostTimer = 0;
-      player.x = canvas.width / 2 - player.width / 2;
-      player.displayX = player.x;
-
-      startScreen.style.display = 'none';
-      gameOverScreen.style.display = 'none';
-      controlsMobile.style.display = isMobile() ? 'flex' : 'none';
-      scoreDisplay.style.display = 'block';
-      soundToggle.style.display = 'block';
-
-      lastObstacleSpawn = 0;
-      animationFrameId = requestAnimationFrame(gameLoop);
-    }
-
-    // End the game
-    function endGame() {
-      gameOver = true;
-      cancelAnimationFrame(animationFrameId);
-      stopMoveSound();
-
-      finalScoreDisplay.textContent = 'Your Score: ' + score;
-
-      // Save high score
-      let best = localStorage.getItem('bestScore') || 0;
-      if(score > best) {
-        localStorage.setItem('bestScore', score);
-        best = score;
-      }
-      bestScoreDisplay.textContent = 'Best Score: ' + best;
-
-      gameOverScreen.style.display = 'flex';
-      controlsMobile.style.display = 'none';
-      scoreDisplay.style.display = 'none';
-    }
-
-    // Check if on mobile
-    function isMobile() {
-      return /Mobi|Android/i.test(navigator.userAgent);
-    }
-
-    // ==== Event Listeners ====
-
-    startBtn.addEventListener('click', startGame);
-    restartBtn.addEventListener('click', startGame);
-    document.addEventListener('keydown', keyDownHandler);
-    document.addEventListener('keyup', keyUpHandler);
-
-    // Disable scrolling on mobile swipe
-    document.body.addEventListener('touchmove', e => {
-      if(gameOver === false) e.preventDefault();
-    }, { passive: false });
-  </script>
-</body>
-</html>
+      for (let i = 0; i < obstacles.length; i++) {
+        if (checkCollision(player, obstacles[i])) {
+          if(player.shieldActive) {
+            // Shield absorbs hit
+            playShieldSound();
+            player.shieldActive = false;
+            obstacles.splice(i,1);
+            continue;
+          } else {
+            play
